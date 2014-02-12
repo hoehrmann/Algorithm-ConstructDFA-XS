@@ -1,4 +1,4 @@
-Compress-Deflate7
-====================
+Algorithm-ConstructDFA-XS
+=========================
 
-See `perldoc lib/Compress/Deflate7.pm`.
+See `perldoc lib/Algorithm/ConstructDFA/XS.pm`.

@@ -19,7 +19,7 @@ our @EXPORT = qw(
   construct_dfa_xs
 );
 
-our $VERSION = '0.03';
+our $VERSION = '0.09';
 
 require XSLoader;
 XSLoader::load('Algorithm::ConstructDFA::XS', $VERSION);
@@ -31,7 +31,7 @@ sub construct_dfa_xs {
   die unless ref $o{is_accepting} or exists $o{final};
   die unless ref $o{successors};
   die unless ref $o{get_label};
-  die unless exists $o{start};
+  die unless exists $o{start} or exists $o{many_start};
   die if ref $o{is_accepting} and exists $o{final};
 
   if (exists $o{final}) {
@@ -41,20 +41,28 @@ sub construct_dfa_xs {
     };
   }
 
-  _construct_dfa_xs($o{start}, $o{get_label}, $o{is_nullable},
+  $o{many_start} //= [$o{start}];
+  
+  _construct_dfa_xs($o{many_start}, $o{get_label}, $o{is_nullable},
     $o{successors}, $o{is_accepting});
 }
 
 sub _construct_dfa_xs {
-  my ($root, $labelf, $nullablef, $successorsf, $acceptingf) = @_;
+  my ($roots, $labelf, $nullablef, $successorsf, $acceptingf) = @_;
 
-  my @todo = @$root;
+  my @todo = map { @$_ } @$roots;
   my %seen;
-  my %is_start = map { $_ => 1 } @$root;
   my @args;
   my $sm = Data::AutoBimap->new;
   my $rm = Data::AutoBimap->new;
-
+  my %is_start;
+  
+  for (my $ix = 0; $ix < @$roots; ++$ix) {
+    for my $v (@{ $roots->[$ix] }) {
+      push @{ $is_start{$v} }, $ix + 1;
+    }
+  }
+  
   while (@todo) {
     my $c = pop @todo;
     
@@ -65,7 +73,7 @@ sub _construct_dfa_xs {
     my $label_x = defined $label ? $rm->s2n($label) : undef;
     
     # [vertex, label, nullable, start, successors...]
-    my @data = ($sm->s2n($c), $label_x, !!$is_nullable, !!$is_start{$c});
+    my @data = ($sm->s2n($c), $label_x, !!$is_nullable, $is_start{$c} // []);
 
     for ($successorsf->($c)) {
       push @data, $sm->s2n($_);

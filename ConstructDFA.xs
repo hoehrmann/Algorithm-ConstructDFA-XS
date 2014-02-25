@@ -180,7 +180,7 @@ build_dfa(SV* accept_sv, AV* args) {
   map<State, vector<State>> successors;
   map<State, bool>          nullable;
   map<State, Label>         label;
-  States                    start_state;
+  map<size_t, States>       start_states;
   
   I32 args_len = av_len(args);
 
@@ -214,11 +214,22 @@ build_dfa(SV* accept_sv, AV* args) {
 
     if (SvOK(*label_svp))
       label[SvUV(*vertex_svp)] = SvUV(*label_svp);
-    
-    if (SvTRUE(*start_svp)) {
-      start_state.insert(SvUV(*vertex_svp));
-    }
 
+
+    if (!( SvROK(*start_svp) && SvTYPE(SvRV(*start_svp)) == SVt_PVAV))
+      croak("Bad arguments");
+
+    AV* start_av = (AV*)SvRV(*start_svp);
+    I32 start_av_len = av_len(start_av);
+    
+    for (int k = 0; k <= start_av_len; ++k) {
+      SV** item_svp  = av_fetch(start_av, k, 0);
+      if (SvUV(*item_svp) == 0) {
+        croak("Bad arguments (start vertex)");
+      }
+      start_states[SvUV(*item_svp)].insert(SvUV(*vertex_svp));
+    }
+    
     I32 current_av_len = av_len(current_av);
 
     for (int k = 4; k <= current_av_len; ++k) {
@@ -239,7 +250,11 @@ build_dfa(SV* accept_sv, AV* args) {
   map<StatesId, set<StatesId>>  predecessors;
   map<StatesId, bool>           accepting;
 
-  if (true) {
+  for (auto s = start_states.begin(); s != start_states.end(); ++s) {
+    States& start_state = s->second;
+
+    sub_temp.clear();
+  
     for (auto i = start_state.begin(); i != start_state.end(); ++i) {
       sub_temp.insert(*i);
     }
@@ -247,11 +262,10 @@ build_dfa(SV* accept_sv, AV* args) {
     add_all_reachable_and_self(sub_todo, sub_temp, nullable, successors);
 
     start_state.insert(sub_temp.elements.begin(), sub_temp.elements.end());
+
+    auto startId = m.states_to_id(start_state);
+    todo.push_front(startId);
   }
-  
-  auto startId = m.states_to_id(start_state);
-  
-  todo.push_front(startId);
   
   while (!todo.empty()) {
     StatesId currentId = todo.front();
@@ -326,9 +340,11 @@ build_dfa(SV* accept_sv, AV* args) {
       std::front_inserter(reachable_todo));
   }
 
+#if 0  
   if (reachable.find(startId) == reachable.end()) {
     // warn("unreachable start state?");
   }
+#endif
   
   States sink;
 
@@ -363,10 +379,17 @@ build_dfa(SV* accept_sv, AV* args) {
   seen.insert(sinkId);
 
   map<StatesId, size_t> state_map;
-  size_t              state_next = 0;
-  state_map[sinkId] = state_next++;        // 0
-  state_map[startId] = state_next++; // 1
+  size_t state_next = 0;
+  state_map[sinkId] = state_next++; // 0
 
+  for (auto s = start_states.begin(); s != start_states.end(); ++s) {
+    auto startIx = s->first;
+    auto state = s->second;
+    auto startId = m.states_to_id(state);
+    state_map[startId] = startIx;
+    state_next = max(state_next, startIx + 1);
+  }
+  
   // ...
   map<size_t, HV*> dfa;
   

@@ -249,7 +249,7 @@ build_dfa(SV* accept_sv, AV* args) {
   Automaton                     automaton;
   map<StatesId, set<StatesId>>  predecessors;
   map<StatesId, bool>           accepting;
-
+  
   for (auto s = start_states.begin(); s != start_states.end(); ++s) {
     States& start_state = s->second;
 
@@ -266,7 +266,7 @@ build_dfa(SV* accept_sv, AV* args) {
     auto startId = m.states_to_id(start_state);
     todo.push_front(startId);
   }
-  
+
   while (!todo.empty()) {
     StatesId currentId = todo.front();
     todo.pop_front();
@@ -379,17 +379,28 @@ build_dfa(SV* accept_sv, AV* args) {
   seen.insert(sinkId);
 
   map<StatesId, size_t> state_map;
-  size_t state_next = 0;
-  state_map[sinkId] = state_next++; // 0
-
+  state_map[sinkId] = 0;
+  size_t state_next = 1 + start_states.size();
+  
+  map<StatesId, size_t> start_ix_to_state_map_id;
+  
   for (auto s = start_states.begin(); s != start_states.end(); ++s) {
     auto startIx = s->first;
     auto state = s->second;
     auto startId = m.states_to_id(state);
-    state_map[startId] = startIx;
-    state_next = max(state_next, startIx + 1);
+    
+    if (reachable.find(startId) == reachable.end()) {
+      croak("start state %u unreachable", startIx);
+    }
+    
+    if (state_map.find(startId) != state_map.end()) {
+      // This happens when equivalent start states are passed to the
+      // construction function.
+    } else {
+      state_map[startId] = startIx;
+    }
   }
-  
+
   // ...
   map<size_t, HV*> dfa;
   
@@ -397,28 +408,55 @@ build_dfa(SV* accept_sv, AV* args) {
 
   for (auto s = reachable.begin(); s != reachable.end(); ++s) {
     if (state_map.find(*s) == state_map.end()) {
-      state_map[*s] = state_next++; // 1
+      state_map[*s] = state_next++;
     }
+  }
 
+  map<size_t, StatesId> state_map_r;
+
+  for (auto s = state_map.begin(); s != state_map.end(); ++s) {
+    state_map_r[s->second] = s->first;
+  }
+  
+  // If multiple start states are passed to the construction function and
+  // they either are identical, or turn out to be equivalent once all the
+  // epsilon-reachable states are added to them, mapping distinct states
+  // to distinct numbers leaves out the duplicates. Since the API conven-
+  // tion is that states 1..n in the generated DFA correspond to the 1..n
+  // start state in the input, the duplicates have to be generated here.
+
+  for (auto s = start_states.begin(); s != start_states.end(); ++s) {
+    auto startIx = s->first;
+    auto state = s->second;
+    auto startId = m.states_to_id(state);
+    state_map_r[startIx] = startId;
+  }
+
+  multimap<StatesId, HV*> id_to_hvs;
+  
+  for (auto s = state_map_r.begin(); s != state_map_r.end(); ++s) {
+    
     HV* state_hv     = newHV();
     AV* combines_av  = newAV();
     SV* combines_rv  = newRV_noinc((SV*)combines_av);
     HV* next_over_hv = newHV();
     SV* next_over_rv = newRV_noinc((SV*)next_over_hv);
 
-    auto he1 = hv_store(state_hv, "Accepts", 7, newSVuv(accepting[*s]), 0);
+    auto he1 = hv_store(state_hv, "Accepts", 7, newSVuv(accepting[s->second]), 0);
     auto he2 = hv_store(state_hv, "Combines", 8, combines_rv, 0);
     auto he3 = hv_store(state_hv, "NextOver", 8, next_over_rv, 0);
 
-    vector<State> x = m.id_to_states(*s);
+    vector<State> x = m.id_to_states(s->second);
 
     for (auto k = x.begin(); k != x.end(); ++k) {
       av_push(combines_av, newSVuv(*k));
     }
 
-    dfa[state_map[*s]] = state_hv;
+    dfa[s->first] = state_hv;
+
+    id_to_hvs.insert(make_pair(s->second, state_hv));
   }
-  
+
   for (auto s = automaton.begin(); s != automaton.end(); ++s) {
     StatesId srcId  = s->first.first;
     Label label = s->first.second;
@@ -426,22 +464,26 @@ build_dfa(SV* accept_sv, AV* args) {
 
     if (dfa.find(state_map[srcId]) == dfa.end()) {
       croak("...");
-      continue;
     }
     
-    SV** next_over_svp = hv_fetch(dfa[state_map[srcId]], "NextOver", 8, 0);
-    
-    if (!next_over_svp)
-      croak("...");
+    for (auto p = id_to_hvs.find(srcId); p != id_to_hvs.end(); ++p) {
+      if (p->first != srcId)
+        break;
+        
+      SV** next_over_svp = hv_fetch(p->second, "NextOver", 8, 0);
       
-    SV* label_sv = newSVuv(label);  
-      
-    HE* he = hv_store_ent((HV*)SvRV(*next_over_svp),
-      label_sv, newSVuv(state_map[dstId]), 0);
+      if (!next_over_svp)
+        croak("...");
+        
+      SV* label_sv = newSVuv(label);  
+        
+      HE* he = hv_store_ent((HV*)SvRV(*next_over_svp),
+        label_sv, newSVuv(state_map[dstId]), 0);
 
-    if (he == NULL) {
-      warn("hv_store_ent failed");
-      SvREFCNT_dec(label_sv);
+      if (he == NULL) {
+        warn("hv_store_ent failed");
+        SvREFCNT_dec(label_sv);
+      }
     }
   }
 

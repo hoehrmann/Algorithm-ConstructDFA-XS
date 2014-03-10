@@ -4,6 +4,7 @@ use 5.012000;
 use strict;
 use warnings;
 use Data::AutoBimap;
+use Storable;
 
 require Exporter;
 
@@ -19,7 +20,7 @@ our @EXPORT = qw(
   construct_dfa_xs
 );
 
-our $VERSION = '0.13';
+our $VERSION = '0.15';
 
 require XSLoader;
 XSLoader::load('Algorithm::ConstructDFA::XS', $VERSION);
@@ -29,10 +30,68 @@ sub construct_dfa_xs {
   
   die unless ref $o{is_nullable};
   die unless ref $o{is_accepting} or exists $o{final};
-  die unless ref $o{successors};
-  die unless ref $o{get_label};
+  die unless ref $o{successors} or ref $o{edges_from};
+  die unless ref $o{get_label} or ref $o{edges_from};
   die unless exists $o{start} or exists $o{many_start};
   die if ref $o{is_accepting} and exists $o{final};
+  die if ref $o{successors} and exists $o{edges_from};
+  die if ref $o{get_label} and ref $o{edges_from};
+  
+  my $class = 'Algorithm::ConstructDFA::XS::Synth';
+  
+  if (exists $o{edges_from}) {
+
+    my $old_accepting = $o{is_accepting};
+    $o{is_accepting} = sub {
+      my @config = grep { ref $_ ne $class } @_;
+      return $old_accepting->(@config);
+    };
+    
+    $o{get_label} = sub {
+      my ($src) = @_;
+      return unless ref $src eq $class;
+      return (Storable::thaw($$src))->[1];
+    };
+
+    my $old_nullable = $o{is_nullable};
+    $o{is_nullable} = sub {
+      my ($src) = @_;
+      
+      if (ref $src eq $class) {
+        my $deref = $$src;
+        my $thawed = Storable::thaw $deref;
+        return not defined $thawed->[1];
+      }
+      
+      $old_nullable->($src);
+    };
+
+    my $old_edges_from = $o{edges_from};
+
+    $o{successors} = sub {
+      my ($src) = @_;
+      
+      if (ref $src eq $class) {
+        return (Storable::thaw $$src)->[2];
+      }
+      
+      my @successors;
+      
+      for my $edge ($old_edges_from->($src)) {
+        my ($dst, $label) = @$edge;
+        
+        # TODO: theoretically there could be name clashes between the
+        # artificial vertex created here and vertices in the original
+        # unwrapped input which can interfere with the bimaps mapping
+        # stringified vertices to numbers.
+        push @successors, bless \(Storable::freeze([$src, $label, $dst])),
+          $class;
+      }
+      
+      return @successors;
+    };
+
+  }
 
   if (exists $o{final}) {
     my %in_final = map { $_ => 1 } @{ $o{final} };
@@ -96,7 +155,7 @@ sub _construct_dfa_xs {
     $over->{ $rm->n2s($_) } = $v->{NextOver}{$_} for keys %{ $v->{NextOver} };
     $v->{NextOver} = $over;
   }
-  
+
   return \%h;
 }
 

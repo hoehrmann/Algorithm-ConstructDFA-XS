@@ -340,12 +340,6 @@ build_dfa(SV* accept_sv, AV* args) {
       std::front_inserter(reachable_todo));
   }
 
-#if 0  
-  if (reachable.find(startId) == reachable.end()) {
-    // warn("unreachable start state?");
-  }
-#endif
-  
   States sink;
 
   for (auto s = automaton.begin(); s != automaton.end(); /* */) {

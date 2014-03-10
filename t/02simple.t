@@ -7,6 +7,32 @@ use Graph::RandomPath;
 
 my $tests = 0;
 
+sub revdet {
+  my ($dfa) = @_;
+  my %edges_from;
+  
+  for my $src (keys %$dfa) {
+    for my $via (keys %{ $dfa->{$src}{NextOver} }) {
+      my $dst = $dfa->{$src}{NextOver}{$via};
+      push @{ $edges_from{$dst} }, [$src, $via];
+    }
+  }
+  
+  my @accepting = grep { $dfa->{$_}{Accepts} } keys %$dfa;
+  
+  return construct_dfa_xs(
+    is_nullable  => sub {
+      1
+    },
+    is_accepting => sub { grep { $_ eq '1' } @_ },
+    edges_from   => sub {
+      my ($src) = @_;
+      return @{ $edges_from{$src} };
+    },
+    start        => [ @accepting ],
+  );
+}
+
 for (1 .. 30) {
   my $g = Graph::Directed->random_graph(
     vertices   => int(rand(32)),
@@ -36,9 +62,31 @@ for (1 .. 30) {
     },
     is_accepting => sub { grep { $_ eq $final } @_ },
     successors   => sub { $g->successors($_[0]) },
-    get_label    => sub { $g->get_vertex_attribute($_[0], 'label') // '' },
+    get_label    => sub { $g->get_vertex_attribute($_[0], 'label') },
     start        => [ $start ],
   );
+  
+  if (rand > 0.5) {
+    $dfa = construct_dfa_xs(
+      is_nullable  => sub {
+        return 1;
+      },
+      is_accepting => sub { grep { $dfa->{$_}{Accepts} } @_ },
+      edges_from   => sub {
+        my ($src) = @_;
+        my @edges;
+        for my $via (keys %{ $dfa->{$src}{NextOver} }) {
+          my $dst = $dfa->{$src}{NextOver}{$via};
+          push @edges, [$dst, $via];
+        }
+        return @edges;
+      },
+      start        => [ 1 ],
+    );
+
+  } elsif (rand > 0.5) {
+    $dfa = revdet(revdet( $dfa ));
+  }
   
   my $dfa_g = Graph::Directed->new;
   my $dfa_g_final = "final";

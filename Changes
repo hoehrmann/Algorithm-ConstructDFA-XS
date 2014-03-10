@@ -1,5 +1,12 @@
 Revision history for Perl extension Algorithm::ConstructDFA::XS.
 
+0.17  March 2013
+  - Fixes for `edges_from` support
+
+0.15  March 2013
+  - Initial support for `edges_from` parameter to accomodate
+    input with labeled edges instead of labeled vertices
+
 0.13  February 2014
   - Fixed bugs in handling of multiple start states
 

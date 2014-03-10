@@ -18,18 +18,11 @@ sub revdet {
     }
   }
   
-  my @accepting = grep { $dfa->{$_}{Accepts} } keys %$dfa;
-  
   return construct_dfa_xs(
-    is_nullable  => sub {
-      1
-    },
+    is_nullable  => sub { 1 },
     is_accepting => sub { grep { $_ eq '1' } @_ },
-    edges_from   => sub {
-      my ($src) = @_;
-      return @{ $edges_from{$src} };
-    },
-    start        => [ @accepting ],
+    edges_from   => sub { @{ $edges_from{$_[0]} } },
+    start        => [ grep { $dfa->{$_}{Accepts} } keys %$dfa ],
   );
 }
 

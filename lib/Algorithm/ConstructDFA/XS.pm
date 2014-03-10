@@ -20,7 +20,7 @@ our @EXPORT = qw(
   construct_dfa_xs
 );
 
-our $VERSION = '0.15';
+our $VERSION = '0.17';
 
 require XSLoader;
 XSLoader::load('Algorithm::ConstructDFA::XS', $VERSION);
@@ -102,8 +102,18 @@ sub construct_dfa_xs {
 
   $o{many_start} //= [$o{start}];
   
-  _construct_dfa_xs($o{many_start}, $o{get_label}, $o{is_nullable},
-    $o{successors}, $o{is_accepting});
+  my $dfa = _construct_dfa_xs($o{many_start}, $o{get_label},
+    $o{is_nullable}, $o{successors}, $o{is_accepting});
+    
+  if (exists $o{edges_from}) {
+    for (values %$dfa) {
+      $_->{Combines} = [ grep {
+        ref $_ ne $class;
+      } @{ $_->{Combines} } ];
+    }
+  }
+  
+  return $dfa;
 }
 
 sub _construct_dfa_xs {

@@ -1,5 +1,9 @@
 Revision history for Perl extension Algorithm::ConstructDFA::XS.
 
+0.23  March 2013
+  - Fixed a stack management bug thanks to bulk88 on irc.perl.org.
+    See https://github.com/Perl-XS/notes/issues/7 for details.
+
 0.17  March 2013
   - Fixes for `edges_from` support
 

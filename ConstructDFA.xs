@@ -480,7 +480,7 @@ build_dfa(SV* accept_sv, AV* args) {
       }
     }
   }
-
+  
   return dfa;
 }
 
@@ -494,7 +494,10 @@ _internal_construct_dfa_xs(accepts_sv, args_sv)
     AV* args;
   PPCODE:
     args = (AV*)SvRV(args_sv);
+
+    PUTBACK;
     auto dfa = build_dfa(accepts_sv, args);
+    SPAGAIN;
 
     for (auto i = dfa.begin(); i != dfa.end(); ++i) {
       mXPUSHs(newSVuv(i->first));

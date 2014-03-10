@@ -20,7 +20,7 @@ our @EXPORT = qw(
   construct_dfa_xs
 );
 
-our $VERSION = '0.17';
+our $VERSION = '0.23';
 
 require XSLoader;
 XSLoader::load('Algorithm::ConstructDFA::XS', $VERSION);
